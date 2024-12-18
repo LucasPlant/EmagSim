@@ -1,12 +1,19 @@
 import matplotlib.pyplot as plt
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, 
-                             QVBoxLayout, QWidget, QHBoxLayout)
+from PyQt5.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+    QHBoxLayout,
+)
 from PyQt5.QtCore import QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 import sys
 import time
 from matplotlib.animation import FuncAnimation
 from simulation import *
+
 
 class Animator:
     """Class in charge of animating the simulation data using matplotlib"""
@@ -17,27 +24,29 @@ class Animator:
     def initialize_plot(self):
         # Matplotlib Figure and Canvas
         self.fig = plt.figure(figsize=(10, 7))
-        self.ax = self.fig.add_subplot(111, projection='3d')
+        self.ax = self.fig.add_subplot(111, projection="3d")
 
         # 3D line plot
         self.lines = []
         for data in self.simulation.get_data():
-            self.lines.append(self.ax.plot(data.x, data.y, data.voltage_V, linewidth=3)[0])
-        
+            self.lines.append(
+                self.ax.plot(data.x, data.y, data.voltage_V, linewidth=3)[0]
+            )
+
         # Plot styling
         self.ax.set_xlim(0, 120)
         self.ax.set_ylim(-20, 20)
         self.ax.set_zlim(-6, 6)
-        
-        self.ax.set_xlabel('X')
-        self.ax.set_ylabel('Y')
-        self.ax.set_zlabel('Voltage')
-        self.ax.set_title('Transmission Line Voltage Propagation')
+
+        self.ax.set_xlabel("X")
+        self.ax.set_ylabel("Y")
+        self.ax.set_zlabel("Voltage")
+        self.ax.set_title("Transmission Line Voltage Propagation")
 
     def update(self):
         self.simulation.step()
         new_data = self.simulation.get_data()
-    
+
         for line, data in zip(self.lines, new_data):
             line.set_data_3d(data.x, data.y, data.voltage_V)
 
@@ -46,7 +55,7 @@ class Animator:
     def reset():
         pass
 
-    
+
 class GUI(QMainWindow):
     """Class that implements the GUI implementation"""
 
@@ -55,7 +64,7 @@ class GUI(QMainWindow):
 
         self.animator: Animator = animator
 
-        self.setWindowTitle('3D Transmission Line Simulator')
+        self.setWindowTitle("3D Transmission Line Simulator")
         self.setGeometry(100, 100, 1200, 800)
 
         # Central widget setup
@@ -70,15 +79,18 @@ class GUI(QMainWindow):
 
         # Control buttons
         btn_layout = QHBoxLayout()
-        play_btn = QPushButton('Play')
-        pause_btn = QPushButton('Pause')
-        reset_btn = QPushButton('Reset')
+        play_btn = QPushButton("Play")
+        step_button = QPushButton("Step")
+        pause_btn = QPushButton("Pause")
+        reset_btn = QPushButton("Reset")
 
         play_btn.clicked.connect(self.start_simulation)
+        step_button.clicked.connect(self.step_simulation)
         pause_btn.clicked.connect(self.pause_simulation)
         reset_btn.clicked.connect(self.reset_simulation)
 
         btn_layout.addWidget(play_btn)
+        btn_layout.addWidget(step_button)
         btn_layout.addWidget(pause_btn)
         btn_layout.addWidget(reset_btn)
         main_layout.addLayout(btn_layout)
@@ -95,6 +107,10 @@ class GUI(QMainWindow):
         """Start the simulation"""
         self.timer.start(50)  # Update every 50 ms
 
+    def step_simulation(self):
+        """Step the simulation a single time step"""
+        self.update_canvas()
+
     def pause_simulation(self):
         """Pause the simulation"""
         self.timer.stop()
@@ -106,12 +122,13 @@ class GUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    simulator = TlineSim()
+    simulator = ParallelFanOutSim()
     animator = Animator(simulator)
     gui = GUI(animator)
     gui.show()
     sys.exit(app.exec_())
     plt.show()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

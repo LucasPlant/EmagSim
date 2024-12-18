@@ -74,15 +74,13 @@ class Component:
         self._sim_info = sim_info
 
     def connect(
-        self, type: ConnectionType, connection: Union[Connection, list[Connection]]
+        self, connection: tuple[ConnectionType, Union[Connection, list[Connection]]]
     ):
         """
         Method to initialize the connections with other components
 
         Args:
-        type: the type of connection
-            for now this will only support purely series or purely parallel connections
-        connection: Either a tuple (Cascaded) or a list of tuples (others) containing the connected component and the function used to reference it
+        connection: a tuple containing the connection type and either a Connection object (cascade) or a list of Connection objects (series and parallel)
         """
         pass
 
@@ -255,6 +253,14 @@ class TransmissionLine(Component):
     """
     An extension of component representing a transmission line
     A transmission line will have 2 ports forward and backward
+    The wave will be represented by a 1D numpy array
+    This wave will be rotated forward and backward to represent the wave propagation
+
+                    (Forward going wave)
+                >>>>>>>>>>forward>>>>>>>>>>>>>
+    Back end                                      Front End
+                <<<<<<<<<<backward<<<<<<<<<<<<
+                    (Backward going wave)
     """
 
     def __init__(self, impedance_ohms: complex, sim_info: SimInfo, length: int):
@@ -272,8 +278,8 @@ class TransmissionLine(Component):
         self._b_voltage_V = np.zeros(length)
 
         # Initialize the received values
-        self._received_f: WaveValue = WaveValue(0, 0)
-        self._received_b: WaveValue = WaveValue(0, 0)
+        self._received_front: WaveValue = WaveValue(0, 0)
+        self._received_back: WaveValue = WaveValue(0, 0)
 
         # Initialize forward and backwards reflection coefficients to be updated by the run transmissions
         self._reflection_coef_f = 0
@@ -281,28 +287,33 @@ class TransmissionLine(Component):
 
     def connect(
         self,
-        types: tuple[ConnectionType, ConnectionType],
-        front: Union[Connection, list[Connection]],
-        back: Union[Connection, list[Connection]],
+        front: tuple[ConnectionType, Union[Connection, list[Connection]]],
+        back: tuple[ConnectionType, Union[Connection, list[Connection]]],
     ):
         """
         Method to initialize the connections with other components
 
         Args:
-        types: a tuple containing the types of connections (forward, backward)
-        forward: Either a tuple (Cascaded) or a list of tuples (others) containing the connected component and the function used to reference it
-        backward: Either a tuple (Cascaded) or a list of tuples (others) containing the connected component and the function used to reference it
+        front: A tuple containing a connection type and either a Connection object or List of Connection objects
+            represents the connections to the front side of a t-line
+        back: A tuple containing a connection type and either a Connection object or List of Connection objects
+            represents the connections to the back side of a t-line
+
+        See above for a crude drawing of a transmission line
         """
-        self._front_type = types[0]
-        self._back_type = types[1]
+        self._front_type, self._front_connections = front
+        self._back_type, self._back_connections = back
 
         # Sanity check the inputs
         # Forward
-        if self._front_type is ConnectionType.CASCADE and type(front) is not Connection:
+        if (
+            self._front_type is ConnectionType.CASCADE
+            and type(self._front_connections) is not Connection
+        ):
             raise ValueError("For Cascaded connection forward must be a tuple")
         if (
             self._front_type in [ConnectionType.SERIES, ConnectionType.PARALLEL]
-            and type(front) is not list
+            and type(self._front_connections) is not list
         ):
             raise ValueError(
                 "For Series and Parallel connection forward must be a list"
@@ -311,28 +322,25 @@ class TransmissionLine(Component):
         # Backward
         if (
             self._back_type is ConnectionType.CASCADE
-            and type(back) is not Connection
+            and type(self._back_connections) is not Connection
         ):
             raise ValueError("For Cascaded connection backward must be a tuple")
         if (
             self._back_type in [ConnectionType.SERIES, ConnectionType.PARALLEL]
-            and type(back) is not list
+            and type(self._back_connections) is not list
         ):
             raise ValueError(
                 "For Series and Parallel connection backward must be a list"
             )
 
-        self._front_connections = front
-        self._back_connections = back
-
     def receive_transmission(self, port: TlinePorts, value: WaveValue):
         # Store the sums to be injected into our tline when we run the simulation portion
         if port is TlinePorts.FRONT:
-            self._received_f.voltage_V += value.voltage_V
-            self._received_f.current_A += value.current_A
+            self._received_front.voltage_V += value.voltage_V
+            self._received_front.current_A += value.current_A
         elif port is TlinePorts.BACK:
-            self._received_b.voltage_V += value.voltage_V
-            self._received_b.current_A += value.current_A
+            self._received_back.voltage_V += value.voltage_V
+            self._received_back.current_A += value.current_A
 
     def run_transmissions(self):
         # Transmit forward
@@ -358,12 +366,12 @@ class TransmissionLine(Component):
         self._f_voltage_V = np.roll(self._f_voltage_V, 1)
         self._b_voltage_V = np.roll(self._b_voltage_V, -1)
 
-        self._f_voltage_V[0] = reflected_from_b + self._received_f.voltage_V
-        self._b_voltage_V[-1] = reflected_from_f + self._received_b.voltage_V
+        self._f_voltage_V[0] = reflected_from_b + self._received_back.voltage_V
+        self._b_voltage_V[-1] = reflected_from_f + self._received_front.voltage_V
 
         # Reset the variable to keep track of reflections
-        self._received_f = WaveValue(0, 0)
-        self._received_b = WaveValue(0, 0)
+        self._received_front = WaveValue(0, 0)
+        self._received_back = WaveValue(0, 0)
 
 
 class TransmissionLineFromLC(TransmissionLine):
@@ -382,40 +390,50 @@ class FunctionGenerator(Component):
 
     def connect(
         self,
-        connection_type: ConnectionType,
-        connection: Union[Connection, list[Connection]],
+        connection: tuple[ConnectionType, Union[Connection, list[Connection]]],
     ):
-        self._connection_type = connection_type
+        self._connection_type, self._connections = connection
 
         # Sanity check the inputs
-        if connection_type is ConnectionType.CASCADE and type(connection) is not Connection:
+        if (
+            self._connection_type is ConnectionType.CASCADE
+            and type(self._connections) is not Connection
+        ):
             raise ValueError("For Cascaded connection forward must be a tuple")
         if (
-            connection_type in [ConnectionType.SERIES, ConnectionType.PARALLEL]
-            and type(connection) is not list
+            self._connection_type in [ConnectionType.SERIES, ConnectionType.PARALLEL]
+            and type(self._connections) is not list
         ):
             raise ValueError(
                 "For Series and Parallel connection forward must be a list"
             )
 
-        self._connections = connection
-
     def run_transmissions(self):
         if self._connection_type is ConnectionType.CASCADE:
             # Use coefficients to calculate transmissions
-            transmitted_voltage_V = self.voltage_func() * (self._connections.component.impedance_ohms / (self.impedance_ohms + self._connections.component.impedance_ohms))
+            transmitted_voltage_V = self.voltage_func() * (
+                self._connections.component.impedance_ohms
+                / (self.impedance_ohms + self._connections.component.impedance_ohms)
+            )
             transmitted_current_A = (
                 transmitted_voltage_V / self._connections.component.impedance_ohms
             )
 
-            self._connections.func(WaveValue(transmitted_voltage_V, transmitted_current_A))
+            self._connections.func(
+                WaveValue(transmitted_voltage_V, transmitted_current_A)
+            )
 
         elif self._connection_type is ConnectionType.PARALLEL:
             # Compute coefficients
-            reciprocal_sum = sum(1 / connection.component.impedance_ohms for connection in self._connections)
+            reciprocal_sum = sum(
+                1 / connection.component.impedance_ohms
+                for connection in self._connections
+            )
             parallel_z = 1 / reciprocal_sum
 
-            transmitted_voltage_V = self.voltage_func() * (parallel_z / (self.impedance_ohms + parallel_z))
+            transmitted_voltage_V = self.voltage_func() * (
+                parallel_z / (self.impedance_ohms + parallel_z)
+            )
 
             for connection in self._connections:
                 transmitted_current_A = (
@@ -425,16 +443,16 @@ class FunctionGenerator(Component):
 
         elif self._connection_type is ConnectionType.SERIES:
             # Compute coefficients
-            impedances = [connection.component.impedance_ohms for connection in self._connections]
+            impedances = [
+                connection.component.impedance_ohms for connection in self._connections
+            ]
             total_impedance = sum(impedances) + self.impedance_ohms
 
-            for connection, impedance in zip(
-                self._connections, impedances
-            ):
-                transmitted_voltage_V = self.voltage_func() * (impedance / (total_impedance + impedance))
-                transmitted_current_A = (
-                    transmitted_voltage_V / impedance
+            for connection, impedance in zip(self._connections, impedances):
+                transmitted_voltage_V = self.voltage_func() * (
+                    impedance / (total_impedance + impedance)
                 )
+                transmitted_current_A = transmitted_voltage_V / impedance
                 connection.func(WaveValue(transmitted_voltage_V, transmitted_current_A))
 
         else:
