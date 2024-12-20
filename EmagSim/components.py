@@ -73,6 +73,9 @@ class Component:
         self.impedance_ohms = impedance_ohms
         self._sim_info = sim_info
 
+        # TODO update this
+        self._gui_interface = None
+
     def connect(
         self, connection: tuple[ConnectionType, Union[Connection, list[Connection]]]
     ):
@@ -104,6 +107,15 @@ class Component:
         Run the calculations necessary to update the simulation of the given component
         """
         pass
+
+    def get_impedance(self):
+        return self.impedance_ohms
+
+    def set_impedance(self, impedance_ohms: complex):
+        self.impedance_ohms = impedance_ohms
+
+    def get_gui_interface(self):
+        return self._gui_interface
 
     # Helper methods that contain the "Scary Math" of T-Lines
     @staticmethod
@@ -285,6 +297,21 @@ class TransmissionLine(Component):
         self._reflection_coef_f = 0
         self._reflection_coef_b = 0
 
+        # Making a voltage probe to get a numerical voltage from the t-line
+        self._probe_pos = 0
+
+        # Make the GUI interface
+        self._gui_interface = {
+            "input": {
+                "Voltage Probe Position": {
+                    "callback": self.set_probe_pos,
+                    "default": self._probe_pos,
+                    "range": (0, length),
+                }
+            },
+            "output": {"Voltage At Probe": {"func": self.get_probe_voltage}},
+        }
+
     def connect(
         self,
         front: tuple[ConnectionType, Union[Connection, list[Connection]]],
@@ -372,6 +399,13 @@ class TransmissionLine(Component):
         # Reset the variable to keep track of reflections
         self._received_front = WaveValue(0, 0)
         self._received_back = WaveValue(0, 0)
+
+    def set_probe_pos(self, probe_pos: int):
+        """Used to set the pos of the voltage probe pos will be cast to an int and clamped at maximum and minimum values"""
+        self._probe_pos = min(len(self._f_voltage_V) - 1, (max(0, probe_pos)))
+
+    def get_probe_voltage(self) -> complex:
+        return self._f_voltage_V[self._probe_pos] + self._b_voltage_V[self._probe_pos]
 
 
 class TransmissionLineFromLC(TransmissionLine):
@@ -470,8 +504,22 @@ class VoltageSource(FunctionGenerator):
 
         self.voltage_V = voltage_V
 
+        self._gui_interface = {
+            "input": {
+                "Impedance Ohms": {
+                    "callback": self.set_impedance,
+                    "default": self.impedance_ohms,
+                },
+                "Voltage Volts": {"callback": self.set_voltage, "default": self.voltage_V},
+            }
+        }
+
     def voltage_func(self):
         return self.voltage_V
+
+    def set_voltage(self, voltage_V: float):
+        print("chaing voltage")
+        self.voltage_V = voltage_V
 
 
 class ACVoltageSource(FunctionGenerator):
@@ -494,11 +542,38 @@ class ACVoltageSource(FunctionGenerator):
         self.frequency_HZ = frequency_HZ
         self.phase_deg = phase_deg
 
+        self._gui_interface = {
+            "input": {
+                "Impedance Ohms": {
+                    "callback": self.set_impedance,
+                    "default": self.impedance_ohms,
+                },
+                "Amplitude Volts": {
+                    "callback": self.set_amplitude,
+                    "default": self.amplitude_V,
+                },
+                "Frequency hz": {
+                    "callback": self.set_frequency,
+                    "default": self.frequency_HZ,
+                },
+                "Phase Deg": {"callback": self.set_phase, "default": self.phase_deg},
+            }
+        }
+
     def voltage_func(self):
         return self.amplitude_V * np.sin(
             (2 * np.pi * self.frequency_HZ * self._sim_info.simulation_time_s())
             + self.phase_deg
         )
+
+    def set_amplitude(self, amplitude_V: float):
+        self.amplitude_V = amplitude_V
+
+    def set_frequency(self, frequency_HZ: float):
+        self.frequency_HZ = frequency_HZ
+
+    def set_phase(self, phase_deg: float):
+        self.phase_deg = phase_deg
 
 
 class ResistiveLoad(Component):
@@ -509,3 +584,12 @@ class ResistiveLoad(Component):
 
     def __init__(self, impedance_ohms: complex, sim_info: SimInfo):
         super().__init__(impedance_ohms, sim_info)
+
+        self._gui_interface = {
+            "input": {
+                "Impedance Ohms": {
+                    "callback": self.set_impedance,
+                    "default": self.impedance_ohms,
+                }
+            }
+        }
