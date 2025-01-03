@@ -16,8 +16,10 @@ import time
 from matplotlib.animation import FuncAnimation
 from simulation import *
 
+
 class NumericLabel(QLabel):
     """Helper method to have an updating label with a number"""
+
     def __init__(self, label: str, number: complex):
         super().__init__(label)
         self._label = label + ": "
@@ -47,8 +49,10 @@ class Animator:
             )
 
         # Plot styling
-        self.ax.set_xlim(0, 120)
-        self.ax.set_ylim(-20, 20)
+        self.ax.autoscale()
+        # self.ax.set_xlim(0, 120)
+        # self.ax.set_ylim(-20, 20)
+        # TODO have a way to intelligently set this
         self.ax.set_zlim(-6, 6)
 
         self.ax.set_xlabel("X")
@@ -111,7 +115,7 @@ class TLineSimPage(QMainWindow):
 
         def make_callback(func):
             """Helper function to assure that lambda is created by value"""
-            return lambda value: func(value)            
+            return lambda value: func(value)
 
         # Add the component specific controls
         for (
@@ -189,7 +193,34 @@ class TLineSimPage(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    simulator = ParallelFanOutSim()
+    simulator = Simulation.from_dicts(
+        sim={
+            "delta_t_s": 0.05,
+            "update_rate_hz": 20,
+            "type": ["time domain", "frequency domain"],
+            "start": "t-line",
+        },
+        components_info={
+            "source": {
+                "type": "VoltageSource",
+                "args": {"impedance_ohms": 10, "voltage_V": 3},
+            },
+            "t-line": {
+                "type": "TransmissionLineFromVelocity",
+                "args": {
+                    "impedance_ohms": 50,
+                    "velocity_ms": 1,
+                    "length_m": 10,
+                    "shape": [1, 0],
+                },
+            },
+            "load": {"type": "ResistiveLoad", "args": {"impedance_ohms": 100}},
+        },
+        connections=[
+            {"type": "cascade", "components": {"source": None, "t-line": "back"}},
+            {"type": "cascade", "components": {"t-line": "front", "load": None}},
+        ],
+    )
     animator = Animator(simulator)
     gui = TLineSimPage(animator)
     gui.show()

@@ -61,15 +61,17 @@ class Component:
     All components should have a impedance and a receive transmission method
     """
 
-    def __init__(self, impedance_ohms: complex, sim_info: SimInfo):
+    def __init__(self, name: str, sim_info: SimInfo, impedance_ohms: complex):
         """
         Initialize parameters and internal variables
 
         Args:
+        name: name of the component
         impedance: the impedance of the transmission line or circuit component when looking into it
             For time domain simulations this should be a real number
             When simulating using phasers this can be a complex number using numpys complex number implementation
         """
+        self.name = name
         self.impedance_ohms = impedance_ohms
         self._sim_info = sim_info
 
@@ -275,19 +277,41 @@ class TransmissionLine(Component):
                     (Backward going wave)
     """
 
-    def __init__(self, impedance_ohms: complex, sim_info: SimInfo, length: int):
+    # TODO put classmethods here to make t-lines of various parameters
+    # Velocity + Impedance
+    # Capacitance + Inductance
+
+    def __init__(
+        self,
+        name: str,
+        sim_info: SimInfo,
+        impedance_ohms: complex,
+        resolution: int,
+        length_m: float,
+        shape: list[float],
+    ):
         """
         Constructor for the Tline
         Args:
+            name: the name of the transmission line
             impedance: the impedance of the Tline
             velocity: the propagation velocity of the Tline
-            length: an integer length representing how many chunks we will use to represent the tline
+            resolution: an integer length representing how many chunks we will use to represent the tline
+            shape: simply to store the shape data is the ratio of x to y
         """
-        super().__init__(impedance_ohms, sim_info)
+        super().__init__(name, sim_info, impedance_ohms)
+
+        self.resolution = resolution
+        self.shape = shape
+        self.length_m = length_m
+        self.x = None
+        self.y = None
+        self._front_connections = None
+        self._back_connections = None
 
         # Arrays that represent the voltages along the transmission line will shift these arrays to represent the wave propagation
-        self._f_voltage_V = np.zeros(length)
-        self._b_voltage_V = np.zeros(length)
+        self._f_voltage_V = np.zeros(resolution)
+        self._b_voltage_V = np.zeros(resolution)
 
         # Initialize the received values
         self._received_front: WaveValue = WaveValue(0, 0)
@@ -306,7 +330,7 @@ class TransmissionLine(Component):
                 "Voltage Probe Position": {
                     "callback": self.set_probe_pos,
                     "default": self._probe_pos,
-                    "range": (0, length),
+                    "range": (0, resolution),
                 }
             },
             "output": {"Voltage At Probe": {"func": self.get_probe_voltage}},
@@ -407,16 +431,50 @@ class TransmissionLine(Component):
     def get_probe_voltage(self) -> complex:
         return self._f_voltage_V[self._probe_pos] + self._b_voltage_V[self._probe_pos]
 
+    def set_x_y_mappings(self, x: np.ndarray, y: np.ndarray):
+        """Allows us to set the xy mappings of the transmission line for storage"""
+        self.x = x
+        self.y = y
 
-class TransmissionLineFromLC(TransmissionLine):
-    """A wrapper around transmission lines that allows you to define them using inductance and capacitance"""
+    def __repr__(self):
+        debug_string = "T-Line"
+        debug_string += f"name: {self.name} | "
+        debug_string += f"resolution {self.resolution} | "
+        debug_string += f"front connections: {self._front_connections} | "
+        debug_string += f"back connections: {self._back_connections} | "
+        debug_string += f"x: {self.x}, y: {self.y} | "
+        return debug_string
+
+
+class TransmissionLineFromVelocity(TransmissionLine):
+    """A transmission line object initialized from the velocity"""
+
+    def __init__(
+        self,
+        name: str,
+        sim_info: SimInfo,
+        impedance_ohms: complex,
+        velocity_ms: float,
+        length_m: float,
+        shape: list[float],
+    ):
+        """TODO docstring"""
+        self.velocity_ms = velocity_ms
+
+        # Calculate how many discrete packets will make up the T-Line this will be rounded up
+        dist_traveled_in_one_dt = velocity_ms * sim_info.delta_t_S
+        resolution = int(np.ceil(length_m / dist_traveled_in_one_dt))
+
+        # The length of the T-Line may be more than initially requested due to the rounding
+        length_m = resolution * dist_traveled_in_one_dt
+        super().__init__(name, sim_info, impedance_ohms, resolution, length_m, shape)
 
 
 class FunctionGenerator(Component):
     """A component Representing a voltage source"""
 
-    def __init__(self, impedance_ohms: complex, sim_info: SimInfo):
-        super().__init__(impedance_ohms, sim_info)
+    def __init__(self, name: str, sim_info: SimInfo, impedance_ohms: complex):
+        super().__init__(name, sim_info, impedance_ohms)
 
     def voltage_func(self) -> complex:
         """Define a function for the voltage output"""
@@ -433,13 +491,13 @@ class FunctionGenerator(Component):
             self._connection_type is ConnectionType.CASCADE
             and type(self._connections) is not Connection
         ):
-            raise ValueError("For Cascaded connection forward must be a tuple")
+            raise ValueError("For Cascaded connection forward must be a connection")
         if (
             self._connection_type in [ConnectionType.SERIES, ConnectionType.PARALLEL]
             and type(self._connections) is not list
         ):
             raise ValueError(
-                "For Series and Parallel connection forward must be a list"
+                "For Series and Parallel connection forward must be a list of connections"
             )
 
     def run_transmissions(self):
@@ -489,8 +547,13 @@ class FunctionGenerator(Component):
                 transmitted_current_A = transmitted_voltage_V / impedance
                 connection.func(WaveValue(transmitted_voltage_V, transmitted_current_A))
 
-        else:
-            raise NotImplementedError
+    def deffine_physical_mapping(self, x: np.ndarray, y: np.ndarray):
+        """
+        Defines where each point on the transmission line will map to in physical space for graphing purposes
+        This data should not need to be manipulated by this class and is mainly used for storage
+        """
+        self.x = x
+        self.y = y
 
 
 class VoltageSource(FunctionGenerator):
@@ -499,8 +562,10 @@ class VoltageSource(FunctionGenerator):
     This should only be used in the time domain
     """
 
-    def __init__(self, impedance_ohms: float, sim_info: SimInfo, voltage_V: float):
-        super().__init__(impedance_ohms, sim_info)
+    def __init__(
+        self, name: str, sim_info: SimInfo, impedance_ohms: float, voltage_V: float
+    ):
+        super().__init__(name, sim_info, impedance_ohms)
 
         self.voltage_V = voltage_V
 
@@ -510,7 +575,10 @@ class VoltageSource(FunctionGenerator):
                     "callback": self.set_impedance,
                     "default": self.impedance_ohms,
                 },
-                "Voltage Volts": {"callback": self.set_voltage, "default": self.voltage_V},
+                "Voltage Volts": {
+                    "callback": self.set_voltage,
+                    "default": self.voltage_V,
+                },
             }
         }
 
@@ -530,13 +598,14 @@ class ACVoltageSource(FunctionGenerator):
 
     def __init__(
         self,
-        impedance_ohms: float,
+        name: str,
         sim_info: SimInfo,
+        impedance_ohms: float,
         amplitude_V: float,
         frequency_HZ: float,
         phase_deg: float,
     ):
-        super().__init__(impedance_ohms, sim_info)
+        super().__init__(name, sim_info, impedance_ohms)
 
         self.amplitude_V = amplitude_V
         self.frequency_HZ = frequency_HZ
@@ -582,8 +651,8 @@ class ResistiveLoad(Component):
     In frequency domain simulations this can have an arbitrary impedance
     """
 
-    def __init__(self, impedance_ohms: complex, sim_info: SimInfo):
-        super().__init__(impedance_ohms, sim_info)
+    def __init__(self, name: str, sim_info: SimInfo, impedance_ohms: complex):
+        super().__init__(name, sim_info, impedance_ohms)
 
         self._gui_interface = {
             "input": {
