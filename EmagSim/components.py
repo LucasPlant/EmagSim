@@ -75,7 +75,6 @@ class Component:
         self.impedance_ohms = impedance_ohms
         self._sim_info = sim_info
 
-        # TODO update this
         self._gui_interface = None
 
     def connect(
@@ -458,7 +457,16 @@ class TransmissionLineFromVelocity(TransmissionLine):
         length_m: float,
         shape: list[float],
     ):
-        """TODO docstring"""
+        """
+        A method to initialize a transmission line with a velocity and a length
+        Args:
+            name the name of the tline
+            sim_info: the sim info struct to pass
+            impedance_ohms: the impedance of the transmission line
+            velocity_ms: the propagation velocity in meters per second
+            length_m: the length in meters:
+            shape: the shape of the transmission line
+        """
         self.velocity_ms = velocity_ms
 
         # Calculate how many discrete packets will make up the T-Line this will be rounded up

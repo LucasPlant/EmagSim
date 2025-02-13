@@ -1,7 +1,7 @@
 {
     "sim": {
-        "delta_t_s": 0.001,
-        "update_rate_hz": 20,
+        "delta_t_s": 0.0000000002,
+        "update_rate_hz": 50,
         "type": ["time domain", "frequency domain"],
         "start": "t-line"
     },
@@ -13,19 +13,19 @@
             },
             {
                 "type": "ACVoltageSource",
-                "args": {"impedance_ohms": 10, "amplitude_V": 3, "frequency_HZ": 100000, "phase_deg": 0}
+                "args": {"impedance_ohms": 10, "amplitude_V": 3, "frequency_HZ": 500000000, "phase_deg": 0}
             }
         ],
         "t-line": [
             {
                 "type": "TransmissionLineFromVelocity",
-                "args": {"impedance_ohms": 50, "velocity_ms": 200000000, "length_m": 10, "shape": [1, 0]}
+                "args": {"impedance_ohms": 50, "velocity_ms": 200000000, "length_m": 2, "shape": [1, 0]}
             }
         ],
         "load": [
             {
                 "type": "ResistiveLoad",
-                "args": {"impedance_ohms": 50}
+                "args": {"impedance_ohms": 10000}
             }
         ]
     },
@@ -34,13 +34,13 @@
             "type": "cascade",
             "components": {
                 "source": null,
-                "t-line": "front"
+                "t-line": "back"
             }
         },
         {
             "type": "cascade",
             "components": {
-                "t-line": "back",
+                "t-line": "front",
                 "load": null
             }
         }

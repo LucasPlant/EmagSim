@@ -2,8 +2,7 @@
 This is a GUI intended to simulate and aid in the visualization of electromagnetic concepts
 
 TODO:
-- Json Interpreter and Autoconector
-    - This can include finally integrating real world units like capacitance ect
+- Multiple demos make the jsons
 - GUI main menu and loading options
 - GUI options
     - 2D
