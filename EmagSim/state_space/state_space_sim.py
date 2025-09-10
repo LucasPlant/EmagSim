@@ -19,7 +19,7 @@ R_load = 100  # Load resistance (ohms)
 
 # dt = 1e-6  # Time step (s)
 Length = 100 # Line length (m)
-N = 400  # Number of sections
+N = 500  # Number of sections
 dz = Length / N  # Section length (m)
 
 # Calculate the maximum time step based on CFL condition
@@ -27,8 +27,13 @@ wave_speed = 1 / np.sqrt(L_m * C_m)
 dt_max = 1 * dz / wave_speed
 
 # num_steps = 100
-end_time = 2e-6
-frames = 300
+end_time = 1e-5
+frames = 1000
+
+# Sinusoidal intializtion paramiters and input
+freq = 4e6
+wavelength = wave_speed / freq
+z_0 = np.sqrt(L_m / C_m)
 
 # TODO make real documentation on the state space derivation
 # For now it is in my notebook
@@ -66,16 +71,19 @@ U = 5 # 5 Volt voltage source
 # x = np.full((N * 2, num_steps + 1), np.nan, dtype=np.float64)
 # x[:, 0] = np.zeros(N * 2, dtype=np.float64)
 x_0 = np.zeros(N * 2, dtype=np.float64)
+# x_0[1::2] = np.cos(np.linspace(0, wavelength * 2 * np.pi, N))
+# x_0[0::2] = x_0[1::2] / z_0
 t_span = (0, end_time)
 
 # for i in range(num_steps):
 #     x[:, i+1] = x[:, i] + dt* (np.dot(A, x[:, i]) + B * U)
 
 def f(t, x):
+    # return np.dot(A, x) + B * np.sin(2 * np.pi * freq * t)
     return np.dot(A, x) + B * U
 
 
-sol = solve_ivp(f, t_span, x_0, method='Radau', t_eval=np.linspace(0, end_time, frames), max_step=dt_max)
+sol = solve_ivp(f, t_span, x_0, method='RK45', t_eval=np.linspace(0, end_time, frames), max_step=dt_max)
 
 np.save("integraion.npy", sol)
 
